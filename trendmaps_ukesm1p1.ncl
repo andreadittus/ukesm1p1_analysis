@@ -6,11 +6,16 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/shea_util.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/contrib/calendar_decode2.ncl"
 
+; ============================================================================= 
+; Script written by Andrea Dittus to produce Figure 4 in Mulcahy et al. 2022 
+; last updated 5/05/2022
+; ============================================================================= 
+
 begin
 
 modelversion = (/"UKESM1","ukesm1p1"/)
 modelname_long = (/"UKESM1","UKESM1.1"/)
-plotname = "temp_trends_"+modelversion(1)+"_70percentmask"
+plotname = "temp_trends_"+modelversion(1)+"_no_obsmask"
 wks=gsn_open_wks("png",plotname)
 plot = new(9,graphic)
 rmse = new(9,float)
@@ -18,17 +23,14 @@ nyear=165
 syear = (/1901,1941,1981/)
 eyear = (/1940,1980,2014/)
 
-do i = 0,2
+do i = 0,2 ; loop over the three time periods
   
   colormap = read_colormap_file("MPL_RdBu")
   seas = "ann"
 
-  runid = (/"1","2","3","4","5","6","7","8","9","10","11","12","16","17","18","19"/)
+; =================== control run ukesm1 ===================                                                                    
 
-
-; =================== control run ukesm1 ===================                                                                                              
-
-  branch_off2 = (/2121,2165,2210,2250,2285,2340/)
+  branch_off2 = (/2121,2165,2210,2250,2285,2340/) ; years from which to start control run segment for de-drifting
   inctrl2 = addfile("tas_aw310.nc","r")
   ctrl2 = inctrl2->tas
   lonc = inctrl2->lon
@@ -45,9 +47,6 @@ do i = 0,2
   drift_trend2!1 = "year"
   drift_trend2!2 = "latitude"
   drift_trend2!3 = "longitude"
-;  slope = new((/6,dimsizes(ann_ctrl2&latitude),dimsizes(ann_ctrl2&longitude)/),float)
-  test = ispan(branch_off2(0),branch_off2(0)+164,1)
-;  printVarSummary(test)
 
   do c = 0,5
     slope := regCoef_n(ispan(branch_off2(c),branch_off2(c)+164,1),ann_ctrl2({year|branch_off2(c):(branch_off2(c)+164)},latitude|:,longitude|:),0,0)
@@ -55,14 +54,16 @@ do i = 0,2
 ;    printVarSummary(intercept)                                                                                                                           
     drift_trend2(c,:,:,:) = conform(drift_trend2(c,:,:,:),slope,(/1,2/))*conform(drift_trend2(c,:,:,:),ispan(branch_off2(c),branch_off2(c)+164,1),0)+conform(drift_trend2(c,:,:,:),onedtond(slope@yintercept,(/dimsizes(ann_ctrl2&latitude),dimsizes(ann_ctrl2&longitude)/)),(/1,2/))
   end do
+
 ;  copy_VarCoords(ann_ctrl2(0,:,:),slope(0,:,:))
-; =================== read in model data ============
+
+; =================== read ukesm1 historical data ============
 
   files := systemfunc("ls -1 UKESM1/historical/tas*nc")
   in = addfiles(files,"r")
   ListSetType(in,"join")
 
-  paper_member_ind = (/4,3,1,2,5,0/) ; indices for member selection in SO2-dep paper
+  paper_member_ind = (/4,3,1,2,5,0/) ; indices for the ensemble members chosen for this paper (6 to match ukesm1p1)
   ens := in[paper_member_ind]->tas(:,:,:,:)
   print(files(paper_member_ind))
   print(branch_off2)
@@ -89,6 +90,8 @@ do i = 0,2
   
 ;  ann1p0_anom = ann1p0 - conform(ann1p0,dim_avg_n_Wrap(ctrl2,0),(/2,3/)
 
+;  remove drift
+
   ddrifted := ann1p0(year|:,ncl_join|:,latitude|:,longitude|:)-drift_trend2(year|:,ncl_join|:,latitude|:,longitude|:)
   ddrifted!0 = "year"
   ddrifted!1 = "ncl_join"
@@ -96,6 +99,9 @@ do i = 0,2
   ddrifted!3 = "longitude"
   copy_VarCoords(ann1p0(year|:,ncl_join|:,latitude|:,longitude|:),ddrifted(year|:,ncl_join|:,latitude|:,longitude|:))
   print(ann1p0(year|164,ncl_join|2,latitude|25,longitude|25))
+
+; reassign ann1p1 to equal de-drifted
+
   ann1p0 := ddrifted
   print(drift_trend2(year|164,ncl_join|2,latitude|25,longitude|25))
   print(ddrifted(ncl_join|2,year|164,latitude|25,longitude|25))
@@ -110,9 +116,9 @@ do i = 0,2
   out = addfile("trends_1p0.nc","c")
   out->trends_1p0 = trends_1p0
   
-; =================== control run ukesm1p1 ===================                                                                                              
+; =================== control run ukesm1p1 ===================                                                                                     
 
-  branch_off = (/2811,2851,2891,2931,2971,3011/)
+  branch_off = (/2811,2851,2891,2931,2971,3011/) ; start years for ukesms1p1 de-drifting for each member
   inctrl = addfile("tas_by230.nc","r")
   ctrl = inctrl->UM_m01s03i236_vn1107
   lonc := inctrl->longitude
@@ -127,14 +133,14 @@ do i = 0,2
   drift_trend!1 = "year"
   drift_trend!2 = "latitude"
   drift_trend!3 = "longitude"
-   do c = 0,5
+   do c = 0,5 ; calculate linear trend in control run for each ensemble member and reconstruct trendline
      slope := regCoef_n(ispan(branch_off(c),branch_off(c)+164,1),ann_ctrl({year|branch_off(c):(branch_off(c)+164)},latitude|:,longitude|:),0,0)
      copy_VarCoords(ann_ctrl(0,:,:),slope)
      intercept := slope@yintercept
      drift_trend(c,:,:,:) = conform(drift_trend(c,:,:,:),slope,(/1,2/))*conform(drift_trend(c,:,:,:),ispan(branch_off(c),branch_off(c)+164,1),0)+conform(drift_trend(c,:,:,:),onedtond(slope@yintercept,(/dimsizes(ann_ctrl&latitude),dimsizes(ann_ctrl&longitude)/)),(/1,2/))
    end do
   
-; ----- new ukesm aka ukesm1.1 -------- 
+; ----- read ukesm1.1 historical data -------- 
 
   files := systemfunc("ls -1v ukesm1p1/historical/tas*nc")
   print(files)
@@ -156,6 +162,8 @@ do i = 0,2
   DJF1p1&time = ispan(1850,2014,1)
   JJA1p1&time = ispan(1850,2014,1)
 
+;remove drift
+
   copy_VarCoords(ann1p1(year|:,ncl_join|:,latitude|:,longitude|:),drift_trend(year|:,ncl_join|:,latitude|:,longitude|:))
   ddrifted := ann1p1(year|:,ncl_join|:,latitude|:,longitude|:)-drift_trend(year|:,ncl_join|:,latitude|:,longitude|:)
   ddrifted!0 = "year"
@@ -165,22 +173,22 @@ do i = 0,2
   copy_VarCoords(ann1p1(year|:,ncl_join|:,latitude|:,longitude|:),ddrifted(year|:,ncl_join|:,latitude|:,longitude|:))
   print(dim_avg_n_Wrap(ddrifted(ncl_join|:,year|:,latitude|:,longitude|:),(/1,2,3/)))
 
+; reassign ann1p1 to equal de-drifted variable
+
   ann1p1 := ddrifted
   
-;  trends_1p1 = new((/6,144,192/),float)
-;  do n = 0,5
-
   tval := new(dimsizes(ann1p1(0,0,:,:)),double)
   nptxy := new(dimsizes(ann1p1(0,0,:,:)),integer)
   
   trends_1p1 = regcoef(ispan(syear(i),eyear(i),1),dim_avg_n_Wrap(ann1p1(ncl_join|:,latitude|:,longitude|:,{year|syear(i):eyear(i)}),0),tval,nptxy)*10
   trends_1p1_all = regCoef(ispan(syear(i),eyear(i),1),ann1p1(ncl_join|:,latitude|:,longitude|:,{year|syear(i):eyear(i)}))*10
+
   printVarSummary(trends_1p1_all)
   copy_VarCoords(ann1p1(ncl_join|:,year|0,latitude|:,longitude|:),trends_1p1_all)
-;  end do
-;  trends_1p1 = regCoef_n(ispan(syear(i),eyear(i),1),dim_avg_n_Wrap((ann1p1({year|syear(i):eyear(i)},ncl_join|:,latitude|:,longitude|:)-drift_trend({year|syear(i):eyear(i)},ncl_join|:,latitude|:,longitude|:)),1),0,0)*10
   copy_VarCoords(ann1p1(0,0,:,:),trends_1p1)
   
+
+
 ; =================== read in observations ==================
 
   inobs = addfile("/gws/nopw/j04/smurphs/E/adittus/analysis/obs/HadCRUT5/HadCRUT.5.0.1.0.analysis.anomalies.ensemble_mean.nc", "r") ;obs/HadCR
@@ -200,19 +208,14 @@ do i = 0,2
 
 ;  ============ interpolate & smooth model data to obs resolution =====================
 
-  ; DJF_LR = linint2_Wrap(DJF&longitude,DJF&latitude,DJF,True,obs_ann&longitude,obs_ann&latitude,0)
-  ; JJA_LR = linint2_Wrap(JJA&longitude,JJA&latitude,JJA,True,obs_ann&longitude,obs_ann&latitude,0)
-
-  ; DJF_bias = dim_avg_n_Wrap(DJF_LR({time|syear(i):eyear(i)},ncl_join|:,latitude|:,longitude|:),(/0,1/)) - dim_avg_n_Wrap(obs_DJF({time|syear(i):eyear(i)},latitude|:,longitude|:),0)
-  ; JJA_bias = dim_avg_n_Wrap(JJA_LR({time|syear(i):eyear(i)},ncl_join|:,latitude|:,longitude|:),(/0,1/)) - dim_avg_n_Wrap(obs_JJA({time|syear(i):eyear(i)},latitude|:,longitude|:),0)
-  ; copy_VarCoords(DJF_LR(0,0,:,:),JJA_bias)
-  ; copy_VarCoords(JJA_LR(0,0,:,:),DJF_bias)
   otval := new(dimsizes(obs_ann(0,:,:)),double)
   onptxy := new(dimsizes(obs_ann(0,:,:)),integer)
   otrends = regcoef(ispan(syear(i),eyear(i),1),obs_ann(latitude|:,longitude|:,{year|syear(i):eyear(i)}),otval,onptxy)*10
   copy_VarCoords(obs_ann(0,:,:),otrends)
-  onptxy = where(onptxy .ge. 0.7*dimsizes(obs_ann(latitude|0,longitude|0,{year|syear(i):eyear(i)})),onptxy,onptxy@_FillValue)
-;  onptxy = where(onptxy .ge. 3,onptxy,onptxy@_FillValue)
+
+;  onptxy = where(onptxy .ge. 0.7*dimsizes(obs_ann(latitude|0,longitude|0,{year|syear(i):eyear(i)})),onptxy,onptxy@_FillValue)
+  onptxy = where(onptxy .ge. 3,onptxy,onptxy@_FillValue)
+
   printVarSummary(otrends)
   printVarSummary(onptxy)
   otrends = where(onptxy .eq. onptxy@_FillValue,otrends@_FillValue,otrends)
@@ -232,6 +235,7 @@ do i = 0,2
   printVarSummary(probadiff)
   copy_VarCoords(trends_1p1,diff)
   copy_VarCoords(trends_1p1,probadiff)
+
 ; ======================== plotting ==========================
 
   res = True
@@ -339,6 +343,7 @@ do i = 0,2
   overlay(plot(0+3*i),plot2)
 ;  draw(plot2)
 ;  frame(wks)
+
 ; ====== observations =====
   
   copy_VarCoords(otrends,otval(:,:))
@@ -358,7 +363,7 @@ do i = 0,2
   plot2   = gsn_contour_shade(plot2, 0.05, 0.05, opt)
   overlay(plot(2+3*i),plot2)
 
-                                ; ========= probadiff =====
+; ========= probadiff =====
 
 
   plot2   := gsn_csm_contour(wks,gsn_add_cyclic_point(probadiff(:,:)), res2)
@@ -373,22 +378,6 @@ do i = 0,2
   
   
 end do
-
-                                ; getvalues plot(2)@contour    ; retrieve colors/levels from plot
-                                ;   "cnFillColors" : colors
-                                ;   "cnLevels"     : levels
-                                ; end getvalues
-
-                                ; ncolors = dimsizes(colors)
-                                ; colors(ncolors/2-1) = 0    ; set two middle colors to white
-                                ; colors(ncolors/2) = 0       ; if you have odd number of colors this
-
-                                ; print(colors)
-
-                                ; setvalues plot(2)@contour
-                                ;   "cnFillColors" : colors       ; reset the colors
-                                ; end setvalues
-
 
 pres = True
 gsnPanelDebug=True
